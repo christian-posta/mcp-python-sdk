@@ -235,10 +235,142 @@ async def api_key_form_post(request):
     """
     return HTMLResponse(content=html_content)
 
+# Add payment confirmation form endpoint
+@mcp.custom_route("/confirm-payment", methods=["GET"])
+async def payment_confirmation_get(request):
+    """Serve the payment confirmation form."""
+    from fastapi.responses import HTMLResponse
+    
+    amount = request.query_params.get("amount", "0.00")
+    currency = request.query_params.get("currency", "USD")
+    elicitation_id = request.query_params.get("id")
+    
+    if not elicitation_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Missing elicitation ID")
+    
+    # Update progress
+    update_elicitation_progress(elicitation_id, "Waiting for payment confirmation...")
+    
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Confirm Payment</title>
+        <style>
+            body {{ font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }}
+            .payment-info {{ background: #f8f9fa; padding: 20px; margin: 20px 0; border-radius: 5px; }}
+            button {{ background: #28a745; color: white; padding: 10px 20px; border: none; cursor: pointer; margin: 5px; }}
+            button:hover {{ background: #218838; }}
+            .cancel {{ background: #dc3545; }}
+            .cancel:hover {{ background: #c82333; }}
+        </style>
+    </head>
+    <body>
+        <h1>Confirm Payment</h1>
+        <div class="payment-info">
+            <h3>Payment Details</h3>
+            <p><strong>Amount:</strong> {amount} {currency}</p>
+            <p><strong>Status:</strong> Pending confirmation</p>
+        </div>
+        <form method="POST" action="/confirm-payment" style="display: inline;">
+            <input type="hidden" name="elicitation" value="{elicitation_id}" />
+            <input type="hidden" name="amount" value="{amount}" />
+            <input type="hidden" name="currency" value="{currency}" />
+            <input type="hidden" name="action" value="confirm" />
+            <button type="submit">Confirm Payment</button>
+        </form>
+        <form method="POST" action="/confirm-payment" style="display: inline;">
+            <input type="hidden" name="elicitation" value="{elicitation_id}" />
+            <input type="hidden" name="amount" value="{amount}" />
+            <input type="hidden" name="currency" value="{currency}" />
+            <input type="hidden" name="action" value="cancel" />
+            <button type="submit" class="cancel">Cancel</button>
+        </form>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+@mcp.custom_route("/confirm-payment", methods=["POST"])
+async def payment_confirmation_post(request):
+    """Handle payment confirmation."""
+    from fastapi import HTTPException
+    from fastapi.responses import HTMLResponse
+    
+    form_data = await request.form()
+    print(f"🔍 Form data received: {dict(form_data)}")  # Debug logging
+    elicitation = form_data.get("elicitation")
+    amount = form_data.get("amount")
+    currency = form_data.get("currency")
+    action = form_data.get("action")
+    
+    print(f"🔍 Parsed values: elicitation={elicitation}, amount={amount}, currency={currency}, action={action}")  # Debug logging
+    print(f"🔍 Validation checks:")
+    print(f"  - elicitation: {bool(elicitation)} (value: '{elicitation}')")
+    print(f"  - amount: {bool(amount)} (value: '{amount}')")
+    print(f"  - currency: {bool(currency)} (value: '{currency}')")
+    print(f"  - action: {bool(action)} (value: '{action}')")
+    
+    if not elicitation or not amount or not currency or not action:
+        missing = []
+        if not elicitation: missing.append("elicitation")
+        if not amount: missing.append("amount")
+        if not currency: missing.append("currency")
+        if not action: missing.append("action")
+        print(f"❌ Missing parameters: {missing}")
+        raise HTTPException(status_code=400, detail=f"Missing required parameters: {', '.join(missing)}")
+    
+    if action == "confirm":
+        print(f"💳 Payment confirmed: {amount} {currency}")
+        complete_elicitation(elicitation, f"Payment confirmed: {amount} {currency}")
+        
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Payment Confirmed</title>
+            <style>
+                body { font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }
+                .success { background: #d4edda; color: #155724; padding: 20px; margin: 20px 0; }
+            </style>
+        </head>
+        <body>
+            <div class="success">
+                <h1>Payment Confirmed ✓</h1>
+                <p>Your payment has been processed successfully.</p>
+            </div>
+            <p>You can close this window and return to your MCP client.</p>
+        </body>
+        </html>
+        """
+    else:  # cancel
+        print(f"💳 Payment cancelled: {amount} {currency}")
+        complete_elicitation(elicitation, "Payment cancelled")
+        
+        html_content = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Payment Cancelled</title>
+            <style>
+                body { font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }
+                .cancelled { background: #f8d7da; color: #721c24; padding: 20px; margin: 20px 0; }
+            </style>
+        </head>
+        <body>
+            <div class="cancelled">
+                <h1>Payment Cancelled</h1>
+                <p>Your payment has been cancelled.</p>
+            </div>
+            <p>You can close this window and return to your MCP client.</p>
+        </body>
+        </html>
+        """
+    
+    return HTMLResponse(content=html_content)
 
 
-
-@mcp.tool(description="Simulate OAuth authorization flow with progress tracking")
 async def oauth_authorize(
     provider: str, 
     scope: str, 
@@ -312,8 +444,12 @@ async def confirm_payment(
     """
     elicitation_id = str(uuid.uuid4())
     
-    # Simulate payment URL (in real implementation, this would be a proper payment processor URL)
-    payment_url = f"https://payments.example.com/confirm?amount={amount}&currency={currency}&id={elicitation_id}"
+    # Debug logging
+    print(f"💳 confirm_payment called with: amount={amount}, currency='{currency}', description='{description}'")
+    
+    # Use local server URL for payment confirmation (like TypeScript example)
+    payment_url = f"http://localhost:8000/confirm-payment?amount={amount}&currency={currency}&id={elicitation_id}"
+    print(f"🔗 Generated payment URL: {payment_url}")
     
     result = await ctx.elicit_url(
         message=f"Please confirm payment of {amount} {currency} for: {description}",
@@ -470,6 +606,7 @@ if __name__ == "__main__":
     print()
     print("🌐 MCP Server will be available at: http://localhost:8000/mcp")
     print("📝 API key form will be available at: http://localhost:8000/api-key-form")
+    print("💳 Payment confirmation will be available at: http://localhost:8000/confirm-payment")
     print()
     
     # Run FastMCP with streamable HTTP transport
