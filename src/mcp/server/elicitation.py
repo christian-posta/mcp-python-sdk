@@ -18,7 +18,7 @@ class AcceptedElicitation(BaseModel, Generic[ElicitSchemaModelT]):
     """Result when user accepts the elicitation."""
 
     action: Literal["accept"] = "accept"
-    data: ElicitSchemaModelT
+    data: ElicitSchemaModelT | None = None
 
 
 class DeclinedElicitation(BaseModel):
@@ -93,6 +93,7 @@ async def elicit_with_validation(
     json_schema = schema.model_json_schema()
 
     result = await session.elicit(
+        mode="form",
         message=message,
         requestedSchema=json_schema,
         related_request_id=related_request_id,
@@ -102,6 +103,53 @@ async def elicit_with_validation(
         # Validate and parse the content using the schema
         validated_data = schema.model_validate(result.content)
         return AcceptedElicitation(data=validated_data)
+    elif result.action == "decline":
+        return DeclinedElicitation()
+    elif result.action == "cancel":
+        return CancelledElicitation()
+    else:
+        # This should never happen, but handle it just in case
+        raise ValueError(f"Unexpected elicitation action: {result.action}")
+
+
+async def elicit_url(
+    session: ServerSession,
+    message: str,
+    url: str,
+    elicitationId: str | None = None,
+    related_request_id: RequestId | None = None,
+) -> ElicitationResult[None]:
+    """Elicit URL interaction from the client/user.
+
+    This method directs the user to an external URL for sensitive interactions
+    that must not pass through the MCP client, such as OAuth flows, payment
+    processing, or credential collection.
+
+    Args:
+        session: The server session
+        message: Human-readable message explaining why the interaction is needed
+        url: The URL that the user should navigate to
+        elicitationId: Optional unique identifier for the elicitation (generated if not provided)
+        related_request_id: Optional related request ID
+
+    Returns:
+        The client's response (accept/decline/cancel)
+    """
+    import uuid
+    
+    if elicitationId is None:
+        elicitationId = str(uuid.uuid4())
+
+    result = await session.elicit(
+        mode="url",
+        message=message,
+        elicitationId=elicitationId,
+        url=url,
+        related_request_id=related_request_id,
+    )
+
+    if result.action == "accept":
+        return AcceptedElicitation(data=None)  # URL elicitation doesn't return data
     elif result.action == "decline":
         return DeclinedElicitation()
     elif result.action == "cancel":

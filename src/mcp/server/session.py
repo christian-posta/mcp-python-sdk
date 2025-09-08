@@ -38,7 +38,7 @@ be instantiated directly by users of the MCP framework.
 """
 
 from enum import Enum
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import anyio
 import anyio.lowlevel
@@ -253,29 +253,71 @@ class ServerSession(
 
     async def elicit(
         self,
+        mode: Literal["form", "url"],
         message: str,
-        requestedSchema: types.ElicitRequestedSchema,
+        requestedSchema: types.ElicitRequestedSchema | None = None,
+        elicitationId: str | None = None,
+        url: str | None = None,
         related_request_id: types.RequestId | None = None,
     ) -> types.ElicitResult:
         """Send an elicitation/create request.
 
         Args:
+            mode: The elicitation mode ("form" or "url")
             message: The message to present to the user
-            requestedSchema: Schema defining the expected response structure
+            requestedSchema: Schema defining the expected response structure (required for form mode)
+            elicitationId: Unique identifier for the elicitation (required for url mode)
+            url: The URL that the user should navigate to (required for url mode)
+            related_request_id: Optional related request ID
 
         Returns:
             The client's response
         """
+        # Validate parameters based on mode
+        if mode == "form" and requestedSchema is None:
+            raise ValueError("requestedSchema is required for form mode")
+        if mode == "url" and (elicitationId is None or url is None):
+            raise ValueError("elicitationId and url are required for url mode")
+        
         return await self.send_request(
             types.ServerRequest(
                 types.ElicitRequest(
                     params=types.ElicitRequestParams(
+                        mode=mode,
                         message=message,
                         requestedSchema=requestedSchema,
+                        elicitationId=elicitationId,
+                        url=url,
                     ),
                 )
             ),
             types.ElicitResult,
+            metadata=ServerMessageMetadata(related_request_id=related_request_id),
+        )
+
+    async def track_elicitation(
+        self,
+        elicitationId: str,
+        related_request_id: types.RequestId | None = None,
+    ) -> types.ElicitTrackResult:
+        """Track elicitation progress.
+
+        Args:
+            elicitationId: The unique identifier for the elicitation to track
+            related_request_id: Optional related request ID
+
+        Returns:
+            The tracking result
+        """
+        return await self.send_request(
+            types.ServerRequest(
+                types.ElicitTrackRequest(
+                    params=types.ElicitTrackRequestParams(
+                        elicitationId=elicitationId,
+                    ),
+                )
+            ),
+            types.ElicitTrackResult,
             metadata=ServerMessageMetadata(related_request_id=related_request_id),
         )
 

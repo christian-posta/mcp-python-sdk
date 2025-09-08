@@ -74,10 +74,77 @@ async def _default_elicitation_callback(
     context: RequestContext["ClientSession", Any],
     params: types.ElicitRequestParams,
 ) -> types.ElicitResult | types.ErrorData:
-    return types.ErrorData(
-        code=types.INVALID_REQUEST,
-        message="Elicitation not supported",
-    )
+    """Default elicitation callback that handles both form and URL modes."""
+    
+    if params.mode == "form":
+        return types.ErrorData(
+            code=types.INVALID_REQUEST,
+            message="Form elicitation not supported by this client",
+        )
+    elif params.mode == "url":
+        return await _handle_url_elicitation(params)
+    else:
+        return types.ErrorData(
+            code=types.INVALID_REQUEST,
+            message=f"Unsupported elicitation mode: {params.mode}",
+        )
+
+
+async def _handle_url_elicitation(params: types.ElicitRequestParams) -> types.ElicitResult:
+    """Handle URL elicitation with security warnings and browser integration."""
+    import webbrowser
+    from urllib.parse import urlparse
+    
+    print(f"\n🔔 Elicitation Request Received:")
+    print(f"Mode: {params.mode}")
+    print(f"🆔 Elicitation ID: {params.elicitationId}")
+    
+    # Parse URL for security
+    try:
+        parsed_url = urlparse(params.url)
+        domain = parsed_url.hostname
+        protocol = parsed_url.scheme
+    except Exception:
+        print("❌ Invalid URL provided by server")
+        return types.ElicitResult(action="decline")
+    
+    # Security warning
+    print("\n⚠️  SECURITY WARNING ⚠️")
+    print("The server is requesting you to open an external URL.")
+    print("Only proceed if you trust this server and understand why it needs this.")
+    print(f"🌐 Target domain: {domain}")
+    print(f"🔗 Full URL: {params.url}")
+    print(f"\nℹ️ Server's reason:\n\n{params.message}\n")
+    
+    # Protocol validation (relaxed for testing as requested)
+    if protocol not in ["https", "http"]:
+        print(f"❌ Unsupported protocol: {protocol}. Only HTTP/HTTPS URLs are allowed.")
+        return types.ElicitResult(action="decline")
+    
+    # Get user consent
+    try:
+        consent = input("\nDo you want to open this URL in your browser? (y/n): ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print("\n🚫 Input cancelled. Cancelling elicitation.")
+        return types.ElicitResult(action="cancel")
+    
+    if consent in ['no', 'n']:
+        print("❌ URL navigation declined.")
+        return types.ElicitResult(action="decline")
+    elif consent not in ['yes', 'y']:
+        print("🚫 Invalid response. Cancelling elicitation.")
+        return types.ElicitResult(action="cancel")
+    
+    # Open URL
+    print(f"\n🚀 Opening browser to: {params.url}")
+    try:
+        webbrowser.open(params.url)
+        print("\n⏳ Waiting for you to complete the interaction in your browser...")
+        print("   The server will be notified once you complete the action.")
+        return types.ElicitResult(action="accept")
+    except Exception as e:
+        print(f"❌ Failed to open URL: {e}")
+        return types.ElicitResult(action="decline")
 
 
 async def _default_list_roots_callback(
@@ -137,7 +204,7 @@ class ClientSession(
     async def initialize(self) -> types.InitializeResult:
         sampling = types.SamplingCapability() if self._sampling_callback is not _default_sampling_callback else None
         elicitation = (
-            types.ElicitationCapability() if self._elicitation_callback is not _default_elicitation_callback else None
+            types.ElicitationCapability(form={}, url={}) if self._elicitation_callback is not _default_elicitation_callback else None
         )
         roots = (
             # TODO: Should this be based on whether we
@@ -178,6 +245,26 @@ class ClientSession(
         return await self.send_request(
             types.ClientRequest(types.PingRequest()),
             types.EmptyResult,
+        )
+
+    async def track_elicitation(self, elicitationId: str) -> types.ElicitTrackResult:
+        """Track elicitation progress.
+
+        Args:
+            elicitationId: The unique identifier for the elicitation to track
+
+        Returns:
+            The tracking result
+        """
+        return await self.send_request(
+            types.ClientRequest(
+                types.ElicitTrackRequest(
+                    params=types.ElicitTrackRequestParams(
+                        elicitationId=elicitationId,
+                    ),
+                )
+            ),
+            types.ElicitTrackResult,
         )
 
     async def send_progress_notification(
@@ -403,6 +490,14 @@ class ClientSession(
             case types.ElicitRequest(params=params):
                 with responder:
                     response = await self._elicitation_callback(ctx, params)
+                    client_response = ClientResponse.validate_python(response)
+                    await responder.respond(client_response)
+
+            case types.ElicitTrackRequest(params=params):
+                with responder:
+                    # For now, return a simple "complete" status
+                    # This will be enhanced when we implement progress tracking
+                    response = types.ElicitTrackResult(status="complete")
                     client_response = ClientResponse.validate_python(response)
                     await responder.respond(client_response)
 

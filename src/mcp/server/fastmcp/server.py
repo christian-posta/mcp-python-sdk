@@ -1132,6 +1132,40 @@ class Context(BaseModel, Generic[ServerSessionT, LifespanContextT, RequestT]):
             session=self.request_context.session, message=message, schema=schema, related_request_id=self.request_id
         )
 
+    async def elicit_url(
+        self,
+        message: str,
+        url: str,
+        elicitationId: str | None = None,
+    ) -> ElicitationResult[None]:
+        """Elicit URL interaction from the client/user.
+
+        This method directs the user to an external URL for sensitive interactions
+        that must not pass through the MCP client, such as OAuth flows, payment
+        processing, or credential collection.
+
+        Args:
+            message: Human-readable message explaining why the interaction is needed
+            url: The URL that the user should navigate to
+            elicitationId: Optional unique identifier for the elicitation (generated if not provided)
+
+        Returns:
+            An ElicitationResult containing the action taken
+
+        Note:
+            Check the result.action to determine if the user accepted, declined, or cancelled.
+            For URL elicitation, result.data will always be None.
+        """
+        from mcp.server.elicitation import elicit_url
+        
+        return await elicit_url(
+            session=self.request_context.session,
+            message=message,
+            url=url,
+            elicitationId=elicitationId,
+            related_request_id=self.request_id,
+        )
+
     async def log(
         self,
         level: Literal["debug", "info", "warning", "error"],

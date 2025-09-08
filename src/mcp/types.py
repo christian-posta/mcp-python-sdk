@@ -156,6 +156,7 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
+ELICITATION_REQUIRED = -32604
 
 
 class ErrorData(BaseModel):
@@ -237,6 +238,10 @@ class SamplingCapability(BaseModel):
 class ElicitationCapability(BaseModel):
     """Capability for elicitation operations."""
 
+    form: dict[str, Any] | None = None
+    """Present if the client supports form elicitation."""
+    url: dict[str, Any] | None = None
+    """Present if the client supports URL elicitation."""
     model_config = ConfigDict(extra="allow")
 
 
@@ -1251,8 +1256,16 @@ ElicitRequestedSchema: TypeAlias = dict[str, Any]
 class ElicitRequestParams(RequestParams):
     """Parameters for elicitation requests."""
 
+    mode: Literal["form", "url"]
+    """The elicitation mode: 'form' for in-band data collection, 'url' for out-of-band interactions."""
     message: str
-    requestedSchema: ElicitRequestedSchema
+    """A human-readable message explaining why the interaction is needed."""
+    requestedSchema: ElicitRequestedSchema | None = None
+    """Schema defining the expected response structure. Required for form mode, not used for url mode."""
+    elicitationId: str | None = None
+    """A unique identifier for the elicitation. Required for url mode, not used for form mode."""
+    url: str | None = None
+    """The URL that the user should navigate to. Required for url mode, not used for form mode."""
     model_config = ConfigDict(extra="allow")
 
 
@@ -1281,11 +1294,33 @@ class ElicitResult(Result):
     """
 
 
+class ElicitTrackRequestParams(RequestParams):
+    """Parameters for elicitation tracking requests."""
+
+    elicitationId: str
+    """The unique identifier for the elicitation to track."""
+    model_config = ConfigDict(extra="allow")
+
+
+class ElicitTrackRequest(Request[ElicitTrackRequestParams, Literal["elicitation/track"]]):
+    """A request from the client to track elicitation progress."""
+
+    method: Literal["elicitation/track"] = "elicitation/track"
+    params: ElicitTrackRequestParams
+
+
+class ElicitTrackResult(Result):
+    """The server's response to an elicitation tracking request."""
+
+    status: Literal["complete"]
+    """The status of the elicitation being tracked."""
+
+
 class ClientResult(RootModel[EmptyResult | CreateMessageResult | ListRootsResult | ElicitResult]):
     pass
 
 
-class ServerRequest(RootModel[PingRequest | CreateMessageRequest | ListRootsRequest | ElicitRequest]):
+class ServerRequest(RootModel[PingRequest | CreateMessageRequest | ListRootsRequest | ElicitRequest | ElicitTrackRequest]):
     pass
 
 
@@ -1315,6 +1350,7 @@ class ServerResult(
         | ReadResourceResult
         | CallToolResult
         | ListToolsResult
+        | ElicitTrackResult
     ]
 ):
     pass
