@@ -26,9 +26,9 @@ from mcp.types import ElicitRequestParams
 
 
 # Create the FastMCP server
-mcp = FastMCP(name="URL Elicitation Example Server")
+mcp = FastMCP(name="URL Elicitation Example Server", host="0.0.0.0", port=8000)
 
-# Elicitation tracking infrastructure
+# Elicitation tracking infrastructure (like TypeScript example)
 class ElicitationMetadata:
     def __init__(self, session_id: str, message: str = "In progress"):
         self.status: str = "pending"
@@ -144,6 +144,98 @@ def start_cleanup_thread():
     thread = threading.Thread(target=cleanup_loop, daemon=True)
     thread.start()
     return thread
+
+# Add API key form endpoints directly to FastMCP server
+@mcp.custom_route("/api-key-form", methods=["GET"])
+async def api_key_form_get(request):
+    """Serve the API key collection form."""
+    from fastapi.responses import HTMLResponse
+    
+    mcp_session_id = request.query_params.get("session")
+    elicitation_id = request.query_params.get("elicitation")
+    
+    if not mcp_session_id or not elicitation_id:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Missing required parameters")
+    
+    # Update progress
+    update_elicitation_progress(elicitation_id, "Waiting for you to submit your API key...")
+    
+    # Serve HTML form (like TypeScript example)
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Submit Your API Key</title>
+        <style>
+            body {{ font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; }}
+            input[type="text"] {{ width: 100%; padding: 8px; margin: 10px 0; box-sizing: border-box; }}
+            button {{ background: #007bff; color: white; padding: 10px 20px; border: none; cursor: pointer; }}
+            button:hover {{ background: #0056b3; }}
+            .user {{ background: #d1ecf1; padding: 8px; margin-bottom: 10px; }}
+            .info {{ color: #666; font-size: 0.9em; margin-top: 20px; }}
+        </style>
+    </head>
+    <body>
+        <h1>API Key Required</h1>
+        <div class="user">✓ Demo mode (no authentication required)</div>
+        <form method="POST" action="/api-key-form">
+            <input type="hidden" name="session" value="{mcp_session_id}" />
+            <input type="hidden" name="elicitation" value="{elicitation_id}" />
+            <label>API Key:<br>
+                <input type="text" name="apiKey" required placeholder="Enter your API key" />
+            </label>
+            <button type="submit">Submit</button>
+        </form>
+        <div class="info">This is a demo showing how a server can elicit sensitive data from a user.</div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+@mcp.custom_route("/api-key-form", methods=["POST"])
+async def api_key_form_post(request):
+    """Handle API key form submission."""
+    from fastapi import HTTPException
+    from fastapi.responses import HTMLResponse
+    
+    form_data = await request.form()
+    session = form_data.get("session")
+    apiKey = form_data.get("apiKey")
+    elicitation = form_data.get("elicitation")
+    
+    if not session or not apiKey or not elicitation:
+        raise HTTPException(status_code=400, detail="Missing required parameters")
+    
+    # Log the received API key
+    print(f"🔑 Received API key {apiKey} for session {session}")
+    
+    # Complete the elicitation
+    complete_elicitation(elicitation, "API key received")
+    
+    # Send success response
+    html_content = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Success</title>
+        <style>
+            body { font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }
+            .success { background: #d4edda; color: #155724; padding: 20px; margin: 20px 0; }
+        </style>
+    </head>
+    <body>
+        <div class="success">
+            <h1>Success ✓</h1>
+            <p>API key received.</p>
+        </div>
+        <p>You can close this window and return to your MCP client.</p>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
+
 
 
 @mcp.tool(description="Simulate OAuth authorization flow with progress tracking")
@@ -311,8 +403,8 @@ async def collect_api_key(
         f"API key collection for {service_name}"
     )
     
-    # Simulate secure API key collection URL
-    api_key_url = f"http://localhost:3000/api-key-form?session={session_id}&elicitation={elicitation_id}"
+    # Use local server URL for API key collection (like TypeScript example)
+    api_key_url = f"http://localhost:8000/api-key-form?session={session_id}&elicitation={elicitation_id}"
     
     result = await ctx.elicit_url(
         message=f"Please provide your {service_name} API key securely. This will not be visible to the MCP client.",
@@ -368,8 +460,7 @@ if __name__ == "__main__":
     # Start cleanup thread
     start_cleanup_thread()
     
-    # Run the server with streamable HTTP transport
-    print("🚀 Starting URL Elicitation Server on port 3000...")
+    print("🚀 Starting URL Elicitation Server...")
     print("📋 Available tools:")
     print("   - oauth_authorize: OAuth authorization with progress tracking")
     print("   - confirm_payment: Payment confirmation")
@@ -377,8 +468,9 @@ if __name__ == "__main__":
     print("   - require_elicitation: Demonstrates ElicitationRequiredError")
     print("   - compare_elicitation_modes: Form vs URL elicitation comparison")
     print()
-    print("🌐 Server will be available at: http://localhost:3000/mcp")
-    print("📝 API key form will be available at: http://localhost:3000/api-key-form")
+    print("🌐 MCP Server will be available at: http://localhost:8000/mcp")
+    print("📝 API key form will be available at: http://localhost:8000/api-key-form")
     print()
     
+    # Run FastMCP with streamable HTTP transport
     mcp.run("streamable-http")
