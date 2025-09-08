@@ -151,15 +151,15 @@ async def api_key_form_get(request):
     """Serve the API key collection form."""
     from fastapi.responses import HTMLResponse
     
-    mcp_session_id = request.query_params.get("session")
-    elicitation_id = request.query_params.get("elicitation")
+    service_name = request.query_params.get("service")
+    elicitation_id = request.query_params.get("id")
     
-    if not mcp_session_id or not elicitation_id:
+    if not service_name or not elicitation_id:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail="Missing required parameters")
     
     # Update progress
-    update_elicitation_progress(elicitation_id, "Waiting for you to submit your API key...")
+    update_elicitation_progress(elicitation_id, f"Waiting for you to submit your {service_name} API key...")
     
     # Serve HTML form (like TypeScript example)
     html_content = f"""
@@ -180,10 +180,10 @@ async def api_key_form_get(request):
         <h1>API Key Required</h1>
         <div class="user">✓ Demo mode (no authentication required)</div>
         <form method="POST" action="/api-key-form">
-            <input type="hidden" name="session" value="{mcp_session_id}" />
             <input type="hidden" name="elicitation" value="{elicitation_id}" />
-            <label>API Key:<br>
-                <input type="text" name="apiKey" required placeholder="Enter your API key" />
+            <input type="hidden" name="service" value="{service_name}" />
+            <label>API Key for {service_name}:<br>
+                <input type="text" name="apiKey" required placeholder="Enter your {service_name} API key" />
             </label>
             <button type="submit">Submit</button>
         </form>
@@ -200,34 +200,42 @@ async def api_key_form_post(request):
     from fastapi.responses import HTMLResponse
     
     form_data = await request.form()
-    session = form_data.get("session")
+    service = form_data.get("service")
     apiKey = form_data.get("apiKey")
     elicitation = form_data.get("elicitation")
     
-    if not session or not apiKey or not elicitation:
-        raise HTTPException(status_code=400, detail="Missing required parameters")
+    print(f"🔍 API Key form data received: {dict(form_data)}")  # Debug logging
+    print(f"🔍 Parsed values: service={service}, apiKey={apiKey}, elicitation={elicitation}")
+    
+    if not service or not apiKey or not elicitation:
+        missing = []
+        if not service: missing.append("service")
+        if not apiKey: missing.append("apiKey")
+        if not elicitation: missing.append("elicitation")
+        print(f"❌ Missing parameters: {missing}")
+        raise HTTPException(status_code=400, detail=f"Missing required parameters: {', '.join(missing)}")
     
     # Log the received API key
-    print(f"🔑 Received API key {apiKey} for session {session}")
+    print(f"🔑 Received API key {apiKey} for service {service}")
     
     # Complete the elicitation
     complete_elicitation(elicitation, "API key received")
     
     # Send success response
-    html_content = """
+    html_content = f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Success</title>
         <style>
-            body { font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }
-            .success { background: #d4edda; color: #155724; padding: 20px; margin: 20px 0; }
+            body {{ font-family: sans-serif; max-width: 400px; margin: 50px auto; padding: 20px; text-align: center; }}
+            .success {{ background: #d4edda; color: #155724; padding: 20px; margin: 20px 0; }}
         </style>
     </head>
     <body>
         <div class="success">
             <h1>Success ✓</h1>
-            <p>API key received.</p>
+            <p>API key received for {service}.</p>
         </div>
         <p>You can close this window and return to your MCP client.</p>
     </body>
@@ -479,8 +487,12 @@ async def collect_api_key(
     """
     elicitation_id = str(uuid.uuid4())
     
-    # Simulate secure API key collection URL
-    api_key_url = f"https://secure-forms.example.com/api-key?service={service_name}&id={elicitation_id}"
+    # Debug logging
+    print(f"🔑 collect_api_key called with: service_name='{service_name}'")
+    
+    # Use local server URL for API key collection (like TypeScript example)
+    api_key_url = f"http://localhost:8000/api-key-form?service={service_name}&id={elicitation_id}"
+    print(f"🔗 Generated API key URL: {api_key_url}")
     
     result = await ctx.elicit_url(
         message=f"Please provide your {service_name} API key securely. This will not be visible to the MCP client.",
