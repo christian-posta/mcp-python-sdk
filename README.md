@@ -1,3 +1,16 @@
+## Implementation of URL elicitations
+
+Fire up my fork of mcp-inspector with the elicitations added.
+
+Run the MCP server:
+
+```bash
+source venv/bin/activate
+python examples/fastmcp/url_elicitation_example.py
+```
+
+
+
 # MCP Python SDK
 
 <div align="center">
